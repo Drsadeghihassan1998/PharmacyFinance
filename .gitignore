@@ -1,3 +1,6 @@
 node_modules
 .tools
 dist
+.claude
+*.xls
+*backup*.json
