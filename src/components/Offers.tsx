@@ -131,7 +131,12 @@ function Results({ form, cash, onSave }: { form: Form; cash: CashContext; onSave
   const r = faPercent(form.r);
 
   const reasons: string[] = [];
-  if (verdict.kind === 'no') {
+  if (verdict.kind === 'no' && profit <= 0) {
+    reasons.push(`این خرید با احتساب تأخیر بیمه زیان می‌دهد: ارزش امروز سود آن ${money(profit)} است.`);
+    if (chosen && chosen.advantage > 0) {
+      reasons.push(`اگر این دارو را به هر حال باید داشته باشید، این گزینه ${money(chosen.advantage)} از خرید عادی بهتر است.`);
+    }
+  } else if (verdict.kind === 'no') {
     reasons.push(`هیچ گزینه‌ای از خرید عادی بهتر نیست؛ بهترین حالت ${money(verdict.advantage)} مزیت دارد.`);
   } else {
     reasons.push(`ارزش امروز این خرید ${money(verdict.advantage)} از خرید عادی بهتر است.`);
@@ -183,7 +188,7 @@ function Results({ form, cash, onSave }: { form: Form; cash: CashContext; onSave
           </Button>
         </div>
         <ol className="mt-4 grid gap-1">
-          {reasons.map((reason, i) => (
+          {reasons.slice(0, 3).map((reason, i) => (
             <li key={i}>{faNumber(i + 1)}. {reason}</li>
           ))}
         </ol>

@@ -28,6 +28,9 @@ export function DoctorFields({
   const days = value.weekDays ?? [];
   const problem = mixProblem(value.insurerMix);
   const mixTotal = Object.values(value.insurerMix).reduce((a, b) => a + b, 0);
+  const orphans = Object.keys(value.insurerMix)
+    .map(Number)
+    .filter((key) => key !== FREE_KEY && !insurers.some((i) => i.id === key));
   const setMix = (key: number, share: number) => {
     const next = { ...value.insurerMix };
     if (share > 0) next[key] = share;
@@ -98,13 +101,16 @@ export function DoctorFields({
           <Badge tone={problem ? 'bad' : 'good'}>جمع {faNumber(mixTotal * 100, 2)}٪</Badge>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {insurers.filter((i) => i.active).map((insurer) => (
+          {insurers.filter((i) => i.active || (value.insurerMix[i.id] ?? 0) > 0).map((insurer) => (
             <PercentField
               key={insurer.id}
-              label={insurer.name}
+              label={insurer.active ? insurer.name : `${insurer.name} (غیرفعال)`}
               value={value.insurerMix[insurer.id] ?? 0}
               onChange={(share) => setMix(insurer.id, share)}
             />
+          ))}
+          {orphans.map((key) => (
+            <PercentField key={key} label="بیمهٔ حذف‌شده" value={value.insurerMix[key]} onChange={(share) => setMix(key, share)} />
           ))}
           <PercentField label="آزاد (بدون بیمه)" value={value.insurerMix[FREE_KEY] ?? 0} onChange={(share) => setMix(FREE_KEY, share)} />
         </div>

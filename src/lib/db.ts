@@ -68,6 +68,8 @@ export interface Drug extends Base {
   /** متن نرمال‌شده برای جستجو */
   searchText: string;
   manual?: boolean;
+  /** کاربر تأیید کرده این ردیف‌ها یک دارو هستند، حتی با قیمت‌های خیلی متفاوت */
+  trustPrices?: boolean;
 }
 
 export interface DrugAlias extends Base {

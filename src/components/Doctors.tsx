@@ -532,6 +532,9 @@ export function Doctors() {
                             {f.doctor.name}
                             {(f.doctor as Doctor).sample && <SampleBadge />}
                             {!f.doctor.active && <Badge>غیرفعال</Badge>}
+                            {Object.keys(f.doctor.insurerMix).some((k) => Number(k) !== 0 && !ctx.insurers.has(Number(k))) && (
+                              <Badge tone="bad">بیمهٔ حذف‌شده در ترکیب</Badge>
+                            )}
                           </span>
                           <span className="mt-1 flex flex-wrap items-center gap-2 text-note text-muted">
                             {f.doctor.specialty}، {faNumber(f.rx)} نسخه در ماه

@@ -250,7 +250,8 @@ export function optimize(i: OfferInput, cash: CashContext): Choice | null {
   let best: Choice | null = null;
   for (let q = step; q <= cap; q += step) {
     const choice = bestMonth(i, q, cash);
-    if (choice && (!best || choice.advantage > best.advantage)) best = choice;
+    if (!choice || presentProfit(i, q, choice.month) <= 0) continue;
+    if (!best || choice.advantage > best.advantage) best = choice;
   }
   return best;
 }
@@ -271,7 +272,8 @@ export function decide(i: OfferInput, cash: CashContext): Verdict {
   const optimal = optimize(i, cash);
   const risky = expiryCheck(i, i.qty).risky;
   const proposed = risky ? null : bestMonth(i, i.qty, cash);
-  if (proposed && proposed.advantage > 0) {
+  // خریدی که با احتساب تأخیر بیمه زیان می‌دهد، حتی اگر از خرید عادی بهتر باشد، «بخرید» نمی‌گیرد.
+  if (proposed && proposed.advantage > 0 && presentProfit(i, proposed.qty, proposed.month) > 0) {
     return { kind: 'buy', qty: proposed.qty, month: proposed.month, advantage: proposed.advantage, optimal };
   }
   if (optimal && optimal.advantage > 0) {

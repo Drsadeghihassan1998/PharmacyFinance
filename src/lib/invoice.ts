@@ -322,7 +322,9 @@ export async function findDistributor(name: string): Promise<Distributor | undef
 }
 
 /** ذخیرهٔ کامل فاکتور: سطرها، بچ‌ها، چک‌ها و نام‌های تأییدشده، همه با هم یا هیچ‌کدام. */
-export async function saveInvoice(draft: DraftInvoice): Promise<number> {
+export async function saveInvoice(input: DraftInvoice): Promise<number> {
+  // چکی که دستی عوض نشده، همیشه از جمع فعلی فاکتور ساخته می‌شود.
+  const draft = input.chequesEdited ? input : { ...input, cheques: planCheques(input) };
   const tables = [db.invoices, db.invoiceItems, db.inventoryLots, db.cheques, db.distributors, db.drugAliases, db.drugs];
   return db.transaction('rw', tables, async () => {
     let distributor = await findDistributor(draft.distributor);
@@ -432,16 +434,22 @@ export async function loadDraft(id: number): Promise<DraftInvoice> {
   const items = await db.invoiceItems.where('invoiceId').equals(id).toArray();
   const cheques = await db.cheques.where('invoiceId').equals(id).toArray();
   const distributor = await db.distributors.get(invoice.distributorId);
+  const itemsTotal = items.reduce((sum, row) => sum + row.total, 0);
+  // جمع فاکتور فقط وقتی ثابت می‌ماند که با جمع سطرها فرق داشته باشد؛ وگرنه با تغییر سطرها باید عوض شود.
+  const fixedPayable = Math.abs(invoice.payable - itemsTotal) > 1 ? invoice.payable : null;
+  // یک چک پرداخت‌نشده به اندازهٔ کل فاکتور یعنی چک خودکار است؛ سررسیدش حفظ و مبلغش به‌روز می‌شود.
+  const autoCheque =
+    cheques.length === 1 && cheques[0].status === 'pending' && Math.abs(cheques[0].amount - invoice.payable) <= 1;
   return {
     id,
     distributor: distributor?.name ?? '',
     number: invoice.number,
     date: invoice.date,
-    payment: invoice.payment,
-    filePayable: invoice.payable,
+    payment: autoCheque ? { ...invoice.payment, dueDate: cheques[0].dueDate } : invoice.payment,
+    filePayable: fixedPayable,
     currencyNote: invoice.currencyNote ?? '',
     fileWarnings: invoice.warnings ?? [],
-    chequesEdited: true,
+    chequesEdited: !autoCheque && (cheques.length > 0 || invoice.payment.type !== 'cash'),
     cheques: cheques.map((c) => ({ key: newKey(), id: c.id, amount: c.amount, dueDate: c.dueDate, status: c.status })),
     items: items.map((row) => ({
       ...emptyItem(),

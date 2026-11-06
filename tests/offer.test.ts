@@ -108,6 +108,11 @@ describe('بقیهٔ محاسبات', () => {
   it('واحد فروش‌نرفته هزینه دارد، پس مزیت کمتر است', () => {
     expect(advantage(example({ monthsToExpiry: 5 }), 100, 6, 0.03)).toBeLessThan(advantage(example(), 100, 6, 0.03));
   });
+  it('خرید زیان‌ده حتی اگر از خرید عادی بهتر باشد: نخرید', () => {
+    const i = example({ consumerPrice: 50000 });
+    expect(advantage(i, 100, 6, 0.03)).toBeGreaterThan(0);
+    expect(decide(i, noCash).kind).toBe('no');
+  });
   it('بدون آفر و با قیمت گران‌تر: نخرید', () => {
     const i = example({ everyX: 0, freeY: 0, discountPerMonth: 0, price: 90000 });
     expect(decide(i, noCash).kind).toBe('no');

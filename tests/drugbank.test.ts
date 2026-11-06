@@ -90,6 +90,48 @@ describe('ادغام فهرست‌ها', () => {
     expect(await db.coverage.where('drugId').equals(item.candidateId).count()).toBe(2);
   });
 
+  it('قیمت بیش از ۲ برابر متفاوت: جدا و نیاز به بررسی؛ «یکی هستند» ماندگار است', async () => {
+    const s = await insurerByName('سلامت');
+    const t = await insurerByName('تأمین');
+    await applyList(s.id, [salamat], { fileName: 'a' });
+    const far = { ...tamin, price: 90000 };
+    const r = await applyList(t.id, [far], { fileName: 'b' });
+    expect(r.review).toBe(1);
+    expect(await db.drugs.count()).toBe(2);
+    const item = (await db.reviewItems.toArray())[0];
+    expect(item.reason).toContain('۲ برابر');
+    expect(await mergeDrugs(item.drugId, item.candidateId)).toBe(true);
+    const again = await applyList(t.id, [far], { fileName: 'b2' });
+    expect(again).toMatchObject({ review: 0, newDrugs: 0 });
+    expect(await db.drugs.count()).toBe(1);
+  });
+
+  it('ادغام قدیمی با قیمت خیلی متفاوت در ورود دوباره جدا می‌شود', async () => {
+    const s = await insurerByName('سلامت');
+    const t = await insurerByName('تأمین');
+    await applyList(s.id, [salamat], { fileName: 'a' });
+    await applyList(t.id, [tamin], { fileName: 'b' });
+    expect(await db.drugs.count()).toBe(1);
+    const r = await applyList(t.id, [{ ...tamin, price: 90000 }], { fileName: 'b2' });
+    expect(r.review).toBe(1);
+    expect(await db.drugs.count()).toBe(2);
+    expect(await db.coverage.count()).toBe(2);
+    const prices = (await db.drugs.toArray()).map((d) => d.price).sort((a, b) => a - b);
+    expect(prices).toEqual([21000, 90000]);
+  });
+
+  it('قیمت بانک به ترتیب ورود بستگی ندارد و جای‌نگهدار قیمت نیست', async () => {
+    const s = await insurerByName('سلامت');
+    const t = await insurerByName('تأمین');
+    await applyList(t.id, [{ ...tamin, price: 30000 }], { fileName: 'b' });
+    await applyList(s.id, [{ ...salamat, price: 25000 }], { fileName: 'a' });
+    expect((await db.drugs.toArray())[0].price).toBe(30000);
+    await applyList(t.id, [{ ...tamin, price: 2 }], { fileName: 'c' });
+    expect((await db.drugs.toArray())[0].price).toBe(25000);
+    const drug = (await db.drugs.toArray())[0];
+    expect((await column(drug.id, t)).price).toBe(25000);
+  });
+
   it('بدون کد: نام + شکل + دوز', async () => {
     const s = await insurerByName('سلامت');
     const t = await insurerByName('تأمین');

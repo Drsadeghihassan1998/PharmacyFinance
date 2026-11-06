@@ -173,6 +173,37 @@ describe('ذخیره و تطبیق', () => {
     expect(await db.cheques.count()).toBe(0);
   });
 
+  it('ویرایش فاکتور جمع و چک را به‌روز می‌کند و سررسید می‌ماند', async () => {
+    const { id } = await saved();
+    const dueBefore = (await db.cheques.toArray())[0].dueDate;
+    const draft = await loadDraft(id);
+    draft.filePayable = null;
+    draft.items[0].qty = 20;
+    await saveInvoice(draft);
+    expect((await db.invoices.get(id))!.payable).toBe(1600000);
+    const [cheque] = await db.cheques.toArray();
+    expect(cheque.amount).toBe(1600000);
+    expect(cheque.dueDate).toBe(dueBefore);
+  });
+
+  it('چکی که دستی عوض شده، بعد از ویرایش حفظ می‌شود', async () => {
+    const { id } = await saved();
+    const [cheque] = await db.cheques.toArray();
+    await db.cheques.update(cheque.id, { amount: 300000 });
+    const draft = await loadDraft(id);
+    expect(draft.chequesEdited).toBe(true);
+    draft.items[0].qty = 20;
+    await saveInvoice(draft);
+    expect((await db.cheques.toArray())[0].amount).toBe(300000);
+    expect((await db.invoices.get(id))!.payable).toBe(1600000);
+  });
+
+  it('جمع فایل که با سطرها فرق دارد نگه داشته می‌شود', async () => {
+    const { draft, id } = await saved();
+    await saveInvoice({ ...draft, id, filePayable: 900000 });
+    expect((await loadDraft(id)).filePayable).toBe(900000);
+  });
+
   it('هشدار قیمت و جمع', async () => {
     const { drugId, draft } = await saved();
     const drugs = new Map((await db.drugs.toArray()).map((d) => [d.id, d]));

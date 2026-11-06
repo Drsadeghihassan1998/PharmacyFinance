@@ -35,6 +35,11 @@ function InsurerForm({ draft, onClose }: { draft: Draft; onClose: () => void }) 
   };
 
   const remove = async () => {
+    const users = (await db.doctors.toArray()).filter((d) => (d.insurerMix[form.id!] ?? 0) > 0);
+    if (users.length > 0) {
+      toast(`این بیمه در ترکیب ${users.map((d) => d.name).join('، ')} است. اول آن را از ترکیب پزشک بردارید.`, 'error');
+      return;
+    }
     await db.transaction('rw', db.insurers, db.coverage, db.priceLists, async () => {
       await db.coverage.where('insurerId').equals(form.id!).delete();
       await db.priceLists.where('insurerId').equals(form.id!).delete();

@@ -25,6 +25,14 @@ export const STATUS_LABELS = Object.values(STATUS);
 
 const SIMILAR_ENOUGH = 0.6;
 
+/** قیمت‌های ۱ و ۲ ریالی در فهرست‌ها جای‌نگهدار هستند، نه قیمت واقعی. */
+const MIN_REAL_PRICE = 10;
+export const isRealPrice = (price: number | undefined): price is number => (price ?? 0) >= MIN_REAL_PRICE;
+
+/** اگر قیمت یک دارو در دو فهرست بیش از این نسبت فرق داشته باشد، تطبیق مطمئن نیست. */
+const PRICE_RATIO_LIMIT = 2;
+const PRICE_REASON = 'کد یکی است ولی قیمت دو فهرست بیش از ۲ برابر فرق دارد';
+
 /** یک ردیف فهرست، بعد از نگاشت ستون‌ها */
 export interface ListRow {
   brandCode?: string;
@@ -178,6 +186,17 @@ export async function applyList(
     const existing = insurerId === null ? [] : await db.coverage.where('insurerId').equals(insurerId).toArray();
     const byListKey = new Map(existing.map((c) => [c.listKey, c]));
     const usedByList = new Set(existing.map((c) => c.drugId));
+    // قیمت این داروها در فهرست بیمه‌های دیگر
+    const otherPrices = new Map<number, number[]>();
+    for (const c of await db.coverage.toArray()) {
+      if (c.insurerId === insurerId || c.stale || !isRealPrice(c.price)) continue;
+      otherPrices.set(c.drugId, [...(otherPrices.get(c.drugId) ?? []), c.price]);
+    }
+    const priceConflict = (target: Drug, price: number) =>
+      !target.trustPrices &&
+      insurerId !== null &&
+      isRealPrice(price) &&
+      (otherPrices.get(target.id) ?? []).some((p) => Math.max(p, price) / Math.min(p, price) > PRICE_RATIO_LIMIT);
     const seen = new Set<string>();
     const dirty = new Set<Drug>();
     const covers: Coverage[] = [];
@@ -196,41 +215,53 @@ export async function applyList(
       seen.add(listKey);
 
       const previous = byListKey.get(listKey);
+      const newPrice = row.price ?? 0;
+      const name = normalizeText(row.name);
       let drug = previous ? byId.get(previous.drugId) : undefined;
-      if (!drug) {
+      let review: Match['review'];
+      if (drug && priceConflict(drug, newPrice)) {
+        // ادغامی که در ورود قبلی انجام شده بود مطمئن نیست: این ردیف از آن دارو جدا می‌شود.
+        review = { candidate: drug, reason: PRICE_REASON };
+        Object.assign(drug, completeDrug({ ...drug, names: drug.names.filter((n) => n !== name) }));
+        dirty.add(drug);
+        drug = undefined;
+      } else if (!drug) {
         // هر ردیف یک فهرست فقط به یک دارو می‌خورد؛ دارویی که این فهرست گرفته دوباره انتخاب نمی‌شود.
         const taken = (d: Drug) => insurerId !== null && usedByList.has(d.id);
         const match = findDrug(row, dose, byCode, byName, taken);
         drug = match.drug;
-        if (!drug) {
-          const created = completeDrug({
-            genericName: baseName(row.name),
-            names: [normalizeText(row.name)],
-            codes: [row.brandCode, row.genericCode].filter((c, i, all): c is string => Boolean(c) && all.indexOf(c) === i),
-            brandCode: row.brandCode,
-            genericCode: row.genericCode,
-            form: normalizeText(row.form),
-            dose: normalizeText(dose),
-            price: row.price ?? 0,
-            otc: false,
-          }) as Drug;
-          created.id = (await db.drugs.add(created)) as number;
-          byId.set(created.id, created);
-          index(created);
-          drug = created;
-          result.newDrugs++;
-          if (match.review) reviews.push({ drugId: created.id, candidateId: match.review.candidate.id, reason: match.review.reason, status: 'open' });
+        review = match.review;
+        if (drug && priceConflict(drug, newPrice)) {
+          review = { candidate: drug, reason: PRICE_REASON };
+          drug = undefined;
         }
       }
+      if (!drug) {
+        const created = completeDrug({
+          genericName: baseName(row.name),
+          names: [normalizeText(row.name)],
+          codes: [row.brandCode, row.genericCode].filter((c, i, all): c is string => Boolean(c) && all.indexOf(c) === i),
+          brandCode: row.brandCode,
+          genericCode: row.genericCode,
+          form: normalizeText(row.form),
+          dose: normalizeText(dose),
+          price: row.price ?? 0,
+          otc: false,
+        }) as Drug;
+        created.id = (await db.drugs.add(created)) as number;
+        byId.set(created.id, created);
+        index(created);
+        drug = created;
+        result.newDrugs++;
+        if (review) reviews.push({ drugId: created.id, candidateId: review.candidate.id, reason: review.reason, status: 'open' });
+      }
 
-      const newPrice = row.price ?? 0;
       const oldPrice = insurerId === null ? drug.price : previous?.price;
       if (oldPrice !== undefined && oldPrice !== newPrice && newPrice > 0 && (previous || insurerId === null)) {
         history.push({ drugId: drug.id, insurerId: insurerId ?? undefined, oldPrice, newPrice, date: batch, batch });
         result.priceChanged++;
       }
 
-      const name = normalizeText(row.name);
       const merged = completeDrug({
         ...drug,
         names: drug.names.includes(name) ? drug.names : [...drug.names, name],
@@ -259,6 +290,19 @@ export async function applyList(
       if (!seen.has(old.listKey) && !old.stale && old.listKey !== '') {
         covers.push({ ...old, stale: true });
         result.stale++;
+      }
+    }
+
+    // قیمت بانک: بیشترین قیمت واقعی فهرست‌ها، تا ترتیب ورود فایل‌ها نتیجه را عوض نکند.
+    if (insurerId !== null) {
+      const here = new Map<number, number[]>();
+      for (const c of covers) {
+        if (!c.stale && isRealPrice(c.price)) here.set(c.drugId, [...(here.get(c.drugId) ?? []), c.price]);
+      }
+      for (const drug of dirty) {
+        if (drug.manual) continue;
+        const prices = [...(otherPrices.get(drug.id) ?? []), ...(here.get(drug.id) ?? [])];
+        drug.price = prices.length ? Math.max(...prices) : 0;
       }
     }
 
@@ -316,7 +360,7 @@ export function insurerColumn(
   list: PriceList | undefined,
 ): InsurerColumn {
   if (coverage && !drug.otc) {
-    const price = coverage.price || drug.price;
+    const price = isRealPrice(coverage.price) ? coverage.price : drug.price;
     const shareBase = coverage.shareBase ?? list?.shareBase ?? 'price';
     const notCovered = coverage.status === STATUS.none;
     const shares = coverageShares({
@@ -397,6 +441,8 @@ export async function mergeDrugs(fromId: number, intoId: number): Promise<boolea
         ...into,
         names: [...new Set([...into.names, ...from.names])],
         codes: [...new Set([...into.codes, ...from.codes])],
+        price: Math.max(into.price, from.price),
+        trustPrices: true,
       }),
     );
     await db.drugs.delete(fromId);

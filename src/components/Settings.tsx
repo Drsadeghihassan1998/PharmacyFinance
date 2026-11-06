@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { backupFileName, checkBackup, exportAll, restoreAll, type BackupFile } from '../lib/backup';
-import { updateSettings, type Settings as SettingsRow, type Theme } from '../lib/db';
+import { db, updateSettings, type Settings as SettingsRow, type Theme } from '../lib/db';
 import { faDate, faNumber } from '../lib/format';
 import { addSamples, clearSamples, countSamples } from '../lib/sample';
 import { Button, Card, CardTitle, ConfirmButton, PageHeader, Segmented } from './ui/basics';
@@ -36,7 +36,7 @@ function download(name: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
-function BackupCard() {
+function BackupCard({ onRestored }: { onRestored: () => void }) {
   const settings = useSettings();
   const toast = useToast();
   const input = useRef<HTMLInputElement>(null);
@@ -58,6 +58,7 @@ function BackupCard() {
     if (!pending) return;
     await restoreAll(pending.backup);
     setPending(null);
+    onRestored();
     toast('داده‌ها از پشتیبان بازیابی شد');
   };
 
@@ -221,7 +222,12 @@ export function Settings() {
           </Card>
 
           <FixedCosts />
-          <BackupCard />
+          <BackupCard
+            onRestored={async () => {
+              const restored = await db.settings.get('main');
+              if (restored) setDraft(pickDraft(restored));
+            }}
+          />
           <SampleCard />
         </div>
       </div>
