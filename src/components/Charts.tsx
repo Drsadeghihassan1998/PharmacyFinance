@@ -220,3 +220,87 @@ export function StackedBars({
     </div>
   );
 }
+
+/** نمودار خطی ساده با چند سری؛ مقدار هر سری از ماه صفر شروع می‌شود. */
+export function LinesChart({
+  series,
+  label,
+}: {
+  series: { name: string; color: string; values: number[] }[];
+  label: string;
+}) {
+  const unit = useUnit();
+  const tick = useTick();
+  const { ref, width } = useWidth();
+  const [hover, setHover] = useState<number | null>(null);
+  const count = Math.max(...series.map((s) => s.values.length));
+  const inner = width - PAD.start - PAD.end;
+  const step = count > 1 ? inner / (count - 1) : inner;
+  const x = (i: number) => width - PAD.end - i * step;
+  const all = series.flatMap((s) => s.values);
+  const low = Math.min(0, ...all);
+  const high = Math.max(0, ...all) || 1;
+  const y = (v: number) => PAD.top + ((high - v) / (high - low || 1)) * (HEIGHT - PAD.top - PAD.bottom);
+  const every = Math.max(1, Math.ceil(count / Math.max(2, Math.floor(inner / 48))));
+
+  const onMove = (e: PointerEvent<SVGRectElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    const px = e.clientX - box.left + PAD.start;
+    setHover(Math.min(count - 1, Math.max(0, Math.round((x(0) - px) / (step || 1)))));
+  };
+
+  return (
+    <div ref={ref} className="relative" dir="ltr" style={{ contain: 'inline-size' }}>
+      <svg width={width} height={HEIGHT} role="img" aria-label={label}>
+        {niceTicks(low, high).map((v) => (
+          <g key={v}>
+            <line x1={PAD.start} x2={width - PAD.end} y1={y(v)} y2={y(v)} stroke="var(--line)" />
+            <AxisLabel x={width - PAD.end + 8} y={y(v) + 4} anchor="start">{tick(v)}</AxisLabel>
+          </g>
+        ))}
+        {series.map((s) => (
+          <path
+            key={s.name}
+            d={s.values.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}
+            fill="none"
+            stroke={s.color}
+            strokeWidth={2}
+            strokeLinejoin="round"
+          />
+        ))}
+        {Array.from({ length: count }, (_, i) =>
+          i % every === 0 ? <AxisLabel key={i} x={x(i)} y={HEIGHT - 8}>{i.toLocaleString('fa-IR')}</AxisLabel> : null,
+        )}
+        {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={HEIGHT - PAD.bottom} stroke="var(--muted)" />}
+        <rect
+          x={PAD.start}
+          y={0}
+          width={Math.max(0, inner)}
+          height={HEIGHT}
+          fill="transparent"
+          onPointerMove={onMove}
+          onPointerDown={onMove}
+          onPointerLeave={() => setHover(null)}
+        />
+      </svg>
+      {hover !== null && (
+        <Tooltip x={x(hover)} width={width}>
+          <div dir="rtl">
+            <div className="font-medium">ماه {hover.toLocaleString('fa-IR')}</div>
+            {series.map((s) => (
+              <div key={s.name}>{s.name}: {fullMoney(s.values[hover] ?? 0, unit)}</div>
+            ))}
+          </div>
+        </Tooltip>
+      )}
+      <ul dir="rtl" className="mt-2 flex flex-wrap gap-4 text-note">
+        {series.map((s) => (
+          <li key={s.name} className="flex items-center gap-1">
+            <span className="inline-block h-1 w-4 rounded-sm" style={{ background: s.color }} aria-hidden />
+            {s.name}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

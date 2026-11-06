@@ -10,13 +10,13 @@ import { Dashboard } from './components/Dashboard';
 import { Settings } from './components/Settings';
 import { Insurers } from './components/Insurers';
 import { ImportHub } from './components/ImportHub';
-import { Placeholder } from './components/Placeholder';
 import { DrugBank } from './components/DrugBank';
 import { Invoices } from './components/Invoices';
 import { ItemProfit } from './components/ItemProfit';
 import { Cheques } from './components/Cheques';
 import { Doctors } from './components/Doctors';
 import { Cashflow } from './components/Cashflow';
+import { Offers } from './components/Offers';
 
 export function App() {
   const settings = useLiveQuery(() => db.settings.get('main'));
@@ -48,9 +48,7 @@ export function App() {
           {route === 'cheques' && <Cheques />}
           {route === 'doctors' && <Doctors />}
           {route === 'cashflow' && <Cashflow />}
-          {route === 'offers' && (
-            <Placeholder route={route} />
-          )}
+          {route === 'offers' && <Offers />}
         </Shell>
       </ToastProvider>
     </SettingsContext>
